@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+INSTALLER_VERSION="2026-08-25.3"
 OWNER="${CERBO_WEATHER_OWNER:-Spidy01}"
 REPO="${CERBO_WEATHER_REPO:-cerbo-gx-weather}"
 REF="${CERBO_WEATHER_REF:-main}"
@@ -17,6 +18,8 @@ TMP="$DEST/.install.$$"
 BACKUP=""
 GUI_SERVICE=""
 
+echo "cerbo-gx-weather installer $INSTALLER_VERSION"
+
 cleanup() {
     rm -rf "$TMP" 2>/dev/null || true
 }
@@ -25,10 +28,11 @@ trap cleanup EXIT INT TERM
 fetch_file() {
     remote="$1"
     output="$2"
+    url="$RAW_BASE/$remote?v=$INSTALLER_VERSION"
     if [ -n "${GH_TOKEN:-}" ]; then
-        wget -q --header="Authorization: Bearer $GH_TOKEN" -O "$output" "$RAW_BASE/$remote"
+        wget -q --header="Authorization: Bearer $GH_TOKEN" -O "$output" "$url"
     else
-        wget -q -O "$output" "$RAW_BASE/$remote"
+        wget -q -O "$output" "$url"
     fi
 }
 
@@ -45,14 +49,14 @@ find_gui_service() {
 restart_gui() {
     find_gui_service
     if [ -n "$GUI_SERVICE" ] && command -v svc >/dev/null 2>&1; then
-        svc -t "$GUI_SERVICE" || true
+        svc -t "$GUI_SERVICE" 2>/dev/null || true
     else
         killall venus-gui-v2 2>/dev/null || true
     fi
 }
 
-rollback_gui() {
-    echo "Rolling GUI changes back to the pre-install backup..." >&2
+restore_gui() {
+    echo "Restoring GUI backup: $BACKUP" >&2
     if [ -n "$BACKUP" ] && [ -f "$BACKUP/SwipePageModel.qml" ]; then
         cp "$BACKUP/SwipePageModel.qml" "$MODEL"
     fi
@@ -69,7 +73,6 @@ rollback_gui() {
     else
         rm -f "$PAGES/weather.svg"
     fi
-    restart_gui
 }
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -77,26 +80,22 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-for command in python3 wget cp mkdir date wc sed grep; do
+for command in python3 wget cp mkdir date wc sed grep sleep; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
     fi
 done
 
-if [ ! -d /opt/victronenergy/gui-v2 ]; then
-    echo "This does not look like a Venus OS GX device with gui-v2 installed." >&2
-    exit 1
-fi
-
 if [ ! -f "$MODEL" ] || [ ! -d "$PAGES" ]; then
-    echo "Unsupported GUI-v2 filesystem layout. Expected: $MODEL" >&2
+    echo "Unsupported GUI-v2 filesystem layout." >&2
+    echo "Expected: $MODEL" >&2
     exit 1
 fi
 
 mkdir -p "$DEST" "$DEST/gui" "$DEST/scripts" "$DEST/backups" "$TMP"
 
-echo "Downloading cerbo-gx-weather from $OWNER/$REPO@$REF..."
+echo "Downloading $OWNER/$REPO@$REF..."
 fetch_file service/weather_modbus.py "$TMP/weather_modbus.py"
 fetch_file service/config.default.json "$TMP/config.default.json"
 fetch_file service/run "$TMP/run"
@@ -107,18 +106,7 @@ fetch_file scripts/rollback_gui.py "$TMP/rollback_gui.py"
 fetch_file scripts/verify.sh "$TMP/verify.sh"
 fetch_file uninstall.sh "$TMP/uninstall.sh"
 
-# Venus OS uses a deliberately small Python installation on some GX builds and
-# may not include the stdlib py_compile module. compile() itself is a Python
-# builtin, so use that for syntax validation instead.
-python3 - "$TMP/weather_modbus.py" "$TMP/patch_gui.py" "$TMP/rollback_gui.py" <<'PY'
-import sys
-
-for filename in sys.argv[1:]:
-    with open(filename, "rb") as source_file:
-        source = source_file.read()
-    compile(source, filename, "exec")
-    print("Python syntax OK:", filename)
-PY
+echo "Downloads complete."
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$DEST/backups/$STAMP"
@@ -129,36 +117,37 @@ cp "$MODEL" "$BACKUP/SwipePageModel.qml"
 [ -f "$PAGES/weather.svg" ] && cp "$PAGES/weather.svg" "$BACKUP/weather.svg" || true
 [ -f "$DEST/config.json" ] && cp "$DEST/config.json" "$BACKUP/config.json" || true
 
-echo "Backup: $BACKUP"
+echo "GUI backup: $BACKUP"
 
 python3 - "$DEST/config.json" "$TMP/config.default.json" "$CR6_HOST" "$UNIT_ID" <<'PY'
 import json
-from pathlib import Path
 import sys
 
-current_path = Path(sys.argv[1])
-default_path = Path(sys.argv[2])
-host_arg = sys.argv[3]
-unit_arg = sys.argv[4]
+current_path, default_path, host_arg, unit_arg = sys.argv[1:5]
+with open(default_path, "r") as f:
+    config = json.load(f)
 
-config = json.loads(default_path.read_text())
-if current_path.exists():
-    try:
-        old = json.loads(current_path.read_text())
-        for key in ("host", "port", "unit_id", "poll_seconds", "timeout_seconds", "float_order"):
-            if key in old.get("modbus", {}):
-                config["modbus"][key] = old["modbus"][key]
-        if "device_instance" in old.get("dbus", {}):
-            config["dbus"]["device_instance"] = old["dbus"]["device_instance"]
-    except Exception as exc:
-        print("Warning: could not merge old config:", exc)
+try:
+    with open(current_path, "r") as f:
+        old = json.load(f)
+except Exception:
+    old = None
+
+if old:
+    for key in ("host", "port", "unit_id", "poll_seconds", "timeout_seconds", "float_order"):
+        if key in old.get("modbus", {}):
+            config["modbus"][key] = old["modbus"][key]
+    if "device_instance" in old.get("dbus", {}):
+        config["dbus"]["device_instance"] = old["dbus"]["device_instance"]
 
 if host_arg:
     config["modbus"]["host"] = host_arg
 if unit_arg:
     config["modbus"]["unit_id"] = int(unit_arg)
 
-current_path.write_text(json.dumps(config, indent=2) + "\n")
+with open(current_path, "w") as f:
+    json.dump(config, f, indent=2)
+    f.write("\n")
 PY
 
 cp "$TMP/weather_modbus.py" "$DEST/weather_modbus.py"
@@ -177,12 +166,16 @@ chmod +x /service/weather-modbus/run
 cp "$TMP/WeatherPage.qml" "$PAGES/WeatherPage.qml"
 cp "$TMP/weather.svg" "$PAGES/weather.svg"
 
-python3 "$DEST/scripts/patch_gui.py" --gui-root "$GUI_ROOT"
+if ! python3 "$DEST/scripts/patch_gui.py" --gui-root "$GUI_ROOT"; then
+    echo "GUI patcher failed before GUI restart." >&2
+    restore_gui
+    exit 1
+fi
 
 HOST_NOW="$(python3 -c 'import json; print(json.load(open("/data/weather-modbus/config.json"))["modbus"]["host"])')"
 if [ "$HOST_NOW" = "CHANGE_ME" ] || [ -z "$HOST_NOW" ]; then
-    echo "Weather files are installed, but no CR6 IP is configured." >&2
-    echo "Run again with: ... | sh -s -- <CR6_IP> [UNIT_ID]" >&2
+    echo "No CR6 IP configured yet." >&2
+    echo "Rerun with: ... | sh -s -- <CR6_IP> [UNIT_ID]" >&2
 else
     if command -v svc >/dev/null 2>&1; then
         svc -u /service/weather-modbus 2>/dev/null || true
@@ -215,33 +208,19 @@ else
     : > "$NEWLOG"
 fi
 
-GUI_FAILED=0
 if grep -E 'Type (ApplicationContent|MainView|SwipePageModel) unavailable|WeatherPage is not a type|cerbo-gx-weather: WeatherPage.qml failed to load|cerbo-gx-weather: WeatherPage.qml createObject failed' "$NEWLOG" >/dev/null 2>&1; then
-    GUI_FAILED=1
-fi
-
-find_gui_service
-if [ -n "$GUI_SERVICE" ] && command -v svstat >/dev/null 2>&1; then
-    if ! svstat "$GUI_SERVICE" 2>/dev/null | grep -q '^.*up '; then
-        GUI_FAILED=1
-    fi
-fi
-
-if [ "$GUI_FAILED" -ne 0 ]; then
-    echo "GUI-v2 reported an error after the weather-page patch." >&2
-    echo "New GUI log:" >&2
+    echo "GUI-v2 reported a weather-page startup error:" >&2
     cat "$NEWLOG" >&2
-    rollback_gui
-    echo "The weather D-Bus service/config was retained, but the GUI patch was rolled back." >&2
+    restore_gui
+    restart_gui
+    echo "GUI restored automatically. Weather D-Bus files/config were retained." >&2
     exit 1
 fi
 
-echo
 echo "cerbo-gx-weather installed successfully."
-echo "CR6:           $HOST_NOW"
-echo "D-Bus service: com.victronenergy.weather.cr6"
-echo "Config:        $DEST/config.json"
-echo "Verify:        $DEST/scripts/verify.sh"
-echo "GUI backup:    $BACKUP"
-echo
-echo "The Weather page is loaded dynamically from a file URL; no qmldir/QML type registration is used."
+echo "Installer:      $INSTALLER_VERSION"
+echo "CR6:            $HOST_NOW"
+echo "D-Bus service:  com.victronenergy.weather.cr6"
+echo "Config:         $DEST/config.json"
+echo "Verify:         $DEST/scripts/verify.sh"
+echo "GUI backup:     $BACKUP"
