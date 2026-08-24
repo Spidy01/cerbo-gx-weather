@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+cd /data/weather-modbus
+exec /usr/bin/python3 -u ./weather_modbus.py
