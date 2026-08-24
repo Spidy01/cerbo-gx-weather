@@ -107,7 +107,18 @@ fetch_file scripts/rollback_gui.py "$TMP/rollback_gui.py"
 fetch_file scripts/verify.sh "$TMP/verify.sh"
 fetch_file uninstall.sh "$TMP/uninstall.sh"
 
-python3 -m py_compile "$TMP/weather_modbus.py" "$TMP/patch_gui.py" "$TMP/rollback_gui.py"
+# Venus OS uses a deliberately small Python installation on some GX builds and
+# may not include the stdlib py_compile module. compile() itself is a Python
+# builtin, so use that for syntax validation instead.
+python3 - "$TMP/weather_modbus.py" "$TMP/patch_gui.py" "$TMP/rollback_gui.py" <<'PY'
+import sys
+
+for filename in sys.argv[1:]:
+    with open(filename, "rb") as source_file:
+        source = source_file.read()
+    compile(source, filename, "exec")
+    print("Python syntax OK:", filename)
+PY
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$DEST/backups/$STAMP"
