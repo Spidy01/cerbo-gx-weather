@@ -1,0 +1,45 @@
+{
+  "modbus": {
+    "host": "CHANGE_ME",
+    "port": 502,
+    "unit_id": 1,
+    "poll_seconds": 2.0,
+    "timeout_seconds": 2.0,
+    "addressing": "4xxxx",
+    "float_order": "ABCD"
+  },
+  "dbus": {
+    "service_name": "com.victronenergy.weather.cr6",
+    "device_instance": 40,
+    "product_name": "CR6 Weather Station",
+    "connection": "Modbus TCP"
+  },
+  "registers": [
+    {"path":"/SolarFlux","register":40001,"type":"float32","unit":"W/m2","decimals":0},
+    {"path":"/PrecipitationTotal","register":40003,"type":"float32","unit":"mm","decimals":1},
+    {"path":"/LightningCount","register":40005,"type":"float32","unit":"count","decimals":0},
+    {"path":"/LightningDistance","register":40007,"type":"float32","unit":"km","decimals":1},
+    {"path":"/WindSpeed","register":40009,"type":"float32","unit":"m/s","decimals":1},
+    {"path":"/WindDirection","register":40011,"type":"float32","unit":"deg","decimals":0},
+    {"path":"/WindGust10s","register":40013,"type":"float32","unit":"m/s","decimals":1},
+    {"path":"/AirTemperature","register":40015,"type":"float32","unit":"C","decimals":1},
+    {"path":"/VaporPressure","register":40017,"type":"float32","unit":"kPa","decimals":2},
+    {"path":"/BarometricPressure","register":40019,"type":"float32","unit":"kPa","decimals":2},
+    {"path":"/SeaLevelPressure","register":40021,"type":"float32","unit":"kPa","decimals":2},
+    {"path":"/RelativeHumidity","register":40023,"type":"float32","unit":"%","decimals":1},
+    {"path":"/HumiditySensorTemp","register":40025,"type":"float32","unit":"C","decimals":1},
+    {"path":"/TiltNS","register":40027,"type":"float32","unit":"deg","decimals":1},
+    {"path":"/TiltWE","register":40029,"type":"float32","unit":"deg","decimals":1},
+    {"path":"/PrecipDropCount","register":40031,"type":"float32","unit":"count","decimals":0},
+    {"path":"/PrecipTipCount","register":40033,"type":"float32","unit":"count","decimals":0},
+    {"path":"/PrecipitationEC","register":40035,"type":"float32","unit":"uS/cm","decimals":1},
+    {"path":"/TotalTilt","register":40037,"type":"float32","unit":"deg","decimals":1},
+    {"path":"/Tmin","register":40039,"type":"float32","unit":"C","decimals":1},
+    {"path":"/Tmax","register":40041,"type":"float32","unit":"C","decimals":1},
+    {"path":"/ClimaVueErrorFlag","register":40043,"type":"float32","unit":"","decimals":0},
+    {"path":"/CR6ErrorWord","register":40045,"type":"float32","unit":"","decimals":0},
+    {"path":"/CR6BatteryVoltage","register":40047,"type":"float32","unit":"V","decimals":2},
+    {"path":"/CR6PanelTemperature","register":40049,"type":"float32","unit":"C","decimals":1},
+    {"path":"/PrecipitationRate","register":40051,"type":"float32","unit":"mm/h","decimals":1}
+  ]
+}
